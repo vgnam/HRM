@@ -22,6 +22,10 @@ from puzzle_dataset import PuzzleDataset, PuzzleDatasetConfig, PuzzleDatasetMeta
 from utils.functions import load_model_class, get_model_source_path
 from models.sparse_embedding import CastedSparseEmbeddingSignSGD_Distributed
 
+wandb.login(key="36b064e69134a2763f1be4695d5e208d955c506a")
+
+import os
+os.environ["HYDRA_FULL_ERROR"] = "1"
 
 class LossConfig(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(extra='allow')
@@ -143,10 +147,10 @@ def create_model(config: PretrainConfig, train_metadata: PuzzleDatasetMetadata, 
 
             world_size=world_size
         ),
-        AdamATan2(
-            model.parameters(),
 
-            lr=0,  # Needs to be set by scheduler
+        torch.optim.AdamW(
+            model.parameters(),
+            lr=0,  # still scheduler-controlled
             weight_decay=config.weight_decay,
             betas=(config.beta1, config.beta2)
         )
@@ -394,6 +398,7 @@ def launch(hydra_config: DictConfig):
         
     # Load sync'ed config
     config = load_synced_config(hydra_config, rank=RANK, world_size=WORLD_SIZE)
+    print(config.data_path)
 
     # Seed RNGs to ensure consistency
     torch.random.manual_seed(config.seed + RANK)
