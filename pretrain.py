@@ -134,24 +134,6 @@ def create_model(config: PretrainConfig, train_metadata: PuzzleDatasetMetadata, 
                     dist.broadcast(param, src=0)
 
     # Optimizers and lr
-    # optimizers = [
-    #     CastedSparseEmbeddingSignSGD_Distributed(
-    #         model.model.puzzle_emb.buffers(),  # type: ignore
-    #
-    #         lr=0,  # Needs to be set by scheduler
-    #         weight_decay=config.puzzle_emb_weight_decay,
-    #
-    #         world_size=world_size
-    #     ),
-    #     AdamATan2(
-    #         model.parameters(),
-    #
-    #         lr=0,  # Needs to be set by scheduler
-    #         weight_decay=config.weight_decay,
-    #         betas=(config.beta1, config.beta2)
-    #     )
-    # ]
-
     optimizers = [
         CastedSparseEmbeddingSignSGD_Distributed(
             model.model.puzzle_emb.buffers(),  # type: ignore
@@ -161,14 +143,32 @@ def create_model(config: PretrainConfig, train_metadata: PuzzleDatasetMetadata, 
 
             world_size=world_size
         ),
-
-        torch.optim.AdamW(
+        AdamATan2(
             model.parameters(),
-            lr=0,  # still scheduler-controlled
+
+            lr=0,  # Needs to be set by scheduler
             weight_decay=config.weight_decay,
             betas=(config.beta1, config.beta2)
         )
     ]
+
+    # optimizers = [
+    #     CastedSparseEmbeddingSignSGD_Distributed(
+    #         model.model.puzzle_emb.buffers(),  # type: ignore
+    #
+    #         lr=0,  # Needs to be set by scheduler
+    #         weight_decay=config.puzzle_emb_weight_decay,
+    #
+    #         world_size=world_size
+    #     ),
+    #
+    #     torch.optim.AdamW(
+    #         model.parameters(),
+    #         lr=0,  # still scheduler-controlled
+    #         weight_decay=config.weight_decay,
+    #         betas=(config.beta1, config.beta2)
+    #     )
+    # ]
 
     optimizer_lrs = [
         config.puzzle_emb_lr,

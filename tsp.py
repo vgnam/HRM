@@ -99,7 +99,7 @@ meta = {
     "vocab_size": n_cities,
     "seq_len": n_cities * n_cities,
     "num_puzzle_identifiers": 1,
-    "total_groups": 1,
+    "total_groups": 1000,
     "mean_puzzle_examples": 1.0,
     "sets": ["all"]
 }
