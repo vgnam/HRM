@@ -4,7 +4,10 @@ from torch import nn
 import torch.nn.functional as F
 
 from models.common import trunc_normal_init_
-
+try:
+    from flash_attn_interface import flash_attn_func  # type: ignore[import]
+except ImportError:
+    from flash_attn import flash_attn_func  # type: ignore[import]
 
 CosSin = Tuple[torch.Tensor, torch.Tensor]
 
@@ -52,22 +55,52 @@ class CastedLinear(nn.Module):
         return F.linear(input, self.weight.to(input.dtype), bias=self.bias.to(input.dtype) if self.bias is not None else None)
 
 
+# class CastedEmbedding(nn.Module):
+#     def __init__(self,
+#                  num_embeddings: int,
+#                  embedding_dim: int,
+#                  init_std: float,
+#                  cast_to: torch.dtype):
+#         super().__init__()
+#         self.cast_to = cast_to
+#
+#         # Truncated LeCun normal init
+#         self.embedding_weight = nn.Parameter(
+#             trunc_normal_init_(torch.empty((num_embeddings, embedding_dim)), std=init_std)
+#         )
+#
+#     def forward(self, input: torch.Tensor) -> torch.Tensor:
+#         return F.embedding(input, self.embedding_weight.to(self.cast_to))
+
 class CastedEmbedding(nn.Module):
     def __init__(self,
                  num_embeddings: int,
                  embedding_dim: int,
                  init_std: float,
-                 cast_to: torch.dtype):
+                 cast_to: torch.dtype,
+                 compressed_len: int = 30):   # <-- new option
         super().__init__()
         self.cast_to = cast_to
+        self.compressed_len = compressed_len
 
         # Truncated LeCun normal init
         self.embedding_weight = nn.Parameter(
             trunc_normal_init_(torch.empty((num_embeddings, embedding_dim)), std=init_std)
         )
-        
+
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        return F.embedding(input, self.embedding_weight.to(self.cast_to))
+        emb = F.embedding(input, self.embedding_weight.to(self.cast_to))  # [B, seq_len, H]
+
+        # Optional compression step
+        if self.compressed_len is not None:
+            batch, seq_len, hidden = emb.shape
+            if seq_len != self.compressed_len:
+                # interpolate along sequence length
+                emb = emb.permute(0, 2, 1)  # [B, H, seq_len]
+                emb = F.interpolate(emb, size=self.compressed_len, mode="linear")  # [B, H, compressed_len]
+                emb = emb.permute(0, 2, 1)  # [B, compressed_len, H]
+
+        return emb
 
 
 class RotaryEmbedding(nn.Module):
@@ -120,8 +153,8 @@ class Attention(nn.Module):
             query, key = apply_rotary_pos_emb(query, key, cos, sin)
 
         # flash attn
-
-        attn_output = F.scaled_dot_product_attention(query, key, value, is_causal=self.causal)
+        # attn_output = F.scaled_dot_product_attention(query, key, value, is_causal=self.causal)
+        attn_output = flash_attn_func(q=query, k=key, v=value, causal=self.causal)
 
         if isinstance(attn_output, tuple):  # fa2 and fa3 compatibility
             attn_output = attn_output[0]
